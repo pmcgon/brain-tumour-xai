@@ -7,7 +7,7 @@ from PIL import Image
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 
-base_dataset_path = r"C:\BraTS2021_TrainingSet"
+base_dataset_path = r"D:\Downlaods\BraTS2021_TrainingSet"
 
 # List of all dataset folders
 dataset_folders = [
@@ -21,7 +21,7 @@ dataset_folders = [
     "UPENN-GBM"
 ]
 
-output_path = r"C:\brats_processed"
+output_path = r"D:\brats_processed"
 # Define constants
 sets = ['train', 'val', 'test']
 categories = ['tumor', 'non_tumor']
@@ -45,7 +45,7 @@ def clear_directory(directory):
             except Exception as e:
                 print(f'Failed to delete {file_path}. Reason: {e}')
 
-def is_informative_slice(slice_data, threshold=0.35):
+def is_informative_slice(slice_data, threshold=0.25):
     non_black_pixels = np.sum(slice_data > 10)
     total_pixels = slice_data.size
     return (non_black_pixels / total_pixels) > threshold
@@ -58,7 +58,10 @@ def save_slice(img, patient_name, view, slice_num, has_tumor, set_name):
     if img.size != (240, 240):
         img = pad_image_to_240x240(img)
 
-    
+    # Rotate coronal and sagittal views 90 degrees to the left
+    if view in ['coronal', 'sagittal']:
+        img = img.rotate(90, expand=True)
+
     img.save(save_path)
 def pad_image_to_240x240(img):
         # Convert PIL Image to numpy array
@@ -80,7 +83,7 @@ def pad_image_to_240x240(img):
         # If the padded image is larger than 240x240, crop it
         if padded_img.shape[0] > 240 or padded_img.shape[1] > 240:
             padded_img = padded_img[:240, :240]
-        
+                    
         return Image.fromarray(padded_img)
 
 
