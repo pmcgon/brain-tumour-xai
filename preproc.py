@@ -3,13 +3,13 @@ import shutil
 import json
 import numpy as np
 import nibabel as nib
+import random
 from PIL import Image
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 
-base_dataset_path = r"D:\Downlaods\BraTS2021_TrainingSet"
+base_dataset_path = r"D:\BraTS2021_TrainingSet"
 
-# List of all dataset folders
 dataset_folders = [
     "ACRIN-FMISO-Brain",
     "CPTAC-GBM",
@@ -22,10 +22,10 @@ dataset_folders = [
 ]
 
 output_path = r"D:\brats_processed"
-# Define constants
 sets = ['train', 'val', 'test']
-categories = ['tumor', 'non_tumor']
-views = ['axial', 'sagittal', 'coronal']
+categories = ['tumour', 'non_tumour']
+views = ['top', 'side', 'front']
+random.seed(42)
 
 def create_directory_structure():
     for set_name in sets:
@@ -45,110 +45,109 @@ def clear_directory(directory):
             except Exception as e:
                 print(f'Failed to delete {file_path}. Reason: {e}')
 
-def is_informative_slice(slice_data, threshold=0.25):
+def is_informative_slice(slice_data, content_threshold=0.25, edge_threshold=0.1):
     non_black_pixels = np.sum(slice_data > 10)
     total_pixels = slice_data.size
-    return (non_black_pixels / total_pixels) > threshold
+    content_ratio = non_black_pixels / total_pixels
 
-def save_slice(img, patient_name, view, slice_num, has_tumor, set_name):
-    category = 'tumor' if has_tumor else 'non_tumor'
-    save_path = os.path.join(output_path, set_name, category, f'{patient_name}_{view}_slice_{slice_num:03d}.png')
+    edges = np.abs(np.diff(slice_data))
+    edge_ratio = np.sum(edges > 10) / edges.size
 
-    # Pad the image to 240x240 if it's not already that size
+    return (content_ratio > content_threshold) and (edge_ratio > edge_threshold)
+
+def has_sufficient_variance(slice_data, var_threshold=100):
+    return np.var(slice_data) > var_threshold
+
+def save_slice(img, patient, view, slice_num, has_tumour, set_name):
+    category = 'tumour' if has_tumour else 'non_tumour'
+    save_path = os.path.join(output_path, set_name, category, f'{patient}_{view}_slice_{slice_num:03d}.png')
+
     if img.size != (240, 240):
-        img = pad_image_to_240x240(img)
+        img = pad_image(img)
 
-    # Rotate coronal and sagittal views 90 degrees to the left
-    if view in ['coronal', 'sagittal']:
+    if view in ['front', 'side']:
         img = img.rotate(90, expand=True)
 
     img.save(save_path)
-def pad_image_to_240x240(img):
-        # Convert PIL Image to numpy array
-        img_array = np.array(img)
-        
-        # Get current dimensions
-        height, width = img_array.shape
-        
-        # Calculate padding
-        pad_height = max(240 - height, 0)
-        pad_width = max(240 - width, 0)
-        
-        # Pad the image
-        padded_img = np.pad(img_array, 
-                            ((pad_height//2, pad_height - pad_height//2), 
-                            (pad_width//2, pad_width - pad_width//2)),
-                            mode='constant', constant_values=0)
-        
-        # If the padded image is larger than 240x240, crop it
-        if padded_img.shape[0] > 240 or padded_img.shape[1] > 240:
-            padded_img = padded_img[:240, :240]
-                    
-        return Image.fromarray(padded_img)
+
+def pad_image(img):
+    img_array = np.array(img)
+    height, width = img_array.shape
+    pad_height = max(240 - height, 0)
+    pad_width = max(240 - width, 0)
+    
+    padded_img = np.pad(img_array, 
+                        ((pad_height//2, pad_height - pad_height//2), 
+                        (pad_width//2, pad_width - pad_width//2)),
+                        mode='constant', constant_values=0)
+    
+    if padded_img.shape[0] > 240 or padded_img.shape[1] > 240:
+        padded_img = padded_img[:240, :240]
+                
+    return Image.fromarray(padded_img)
+
+def shuffle_data(data_list):
+    random.shuffle(data_list)
+    return data_list
 
 
-def process_patient_data(patient_folder, set_name):
+def process_patient_data(patient_folder, set_name): #Process data for a single patient by extractn
     seg_file = [f for f in os.listdir(patient_folder) if f.endswith('seg.nii.gz')][0]
     seg_path = os.path.join(patient_folder, seg_file)
     seg_img = nib.load(seg_path)
     seg_data = seg_img.get_fdata()
 
-    t1ce_file = [f for f in os.listdir(patient_folder) if f.endswith('flair.nii.gz')][0]
-    t1ce_path = os.path.join(patient_folder, t1ce_file)
-    t1ce_img = nib.load(t1ce_path)
-    t1ce_data = t1ce_img.get_fdata()
+    flair_file = [f for f in os.listdir(patient_folder) if f.endswith('flair.nii.gz')][0]
+    flair_path = os.path.join(patient_folder, flair_file)
+    flair_img = nib.load(flair_path)
+    flair_data = flair_img.get_fdata()
 
-    patient_name = os.path.basename(patient_folder)
+    patient = os.path.basename(patient_folder)
 
     for view_idx, view in enumerate(views):
-        if view == 'axial':
-            slices = t1ce_data.shape[2]
-        elif view == 'sagittal':
-            slices = t1ce_data.shape[0]
-        else:  # coronal
-            slices = t1ce_data.shape[1]
+        if view == 'top':
+            slices = flair_data.shape[2]
+        elif view == 'front':
+            slices = flair_data.shape[1]
+        else:  # side
+            slices = flair_data.shape[0]
 
-        for i in tqdm(range(slices), desc=f"Processing {patient_name} - {view}", leave=False):
-            if view == 'axial':
-                t1ce_slice = t1ce_data[:, :, i]
+        slice_window = 5  # Save one slice every 5 slices
+        for i in tqdm(range(0, slices, slice_window), desc=f"Processing {patient} - {view}", leave=False):
+            if view == 'top':
+                flair_slice = flair_data[:, :, i]
                 seg_slice = seg_data[:, :, i]
-            elif view == 'sagittal':
-                t1ce_slice = t1ce_data[i, :, :]
+            elif view == 'side':
+                flair_slice = flair_data[i, :, :]
                 seg_slice = seg_data[i, :, :]
-            else:  # coronal
-                t1ce_slice = t1ce_data[:, i, :]
+            else:  # front
+                flair_slice = flair_data[:, i, :]
                 seg_slice = seg_data[:, i, :]
 
-            # Handle division by zero and NaN values
-            t1ce_min = np.min(t1ce_slice)
-            t1ce_max = np.max(t1ce_slice)
-            if t1ce_min == t1ce_max:
-                t1ce_normalized = np.zeros_like(t1ce_slice)
-            else:
-                t1ce_normalized = (t1ce_slice - t1ce_min) / (t1ce_max - t1ce_min)
-            
-            t1ce_normalized = np.clip(t1ce_normalized, 0, 1)  # Ensure values are between 0 and 1
-            t1ce_slice = (t1ce_normalized * 255).astype(np.uint8)
+            if is_informative_slice(flair_slice) and has_sufficient_variance(flair_slice):
+                flair_min = np.min(flair_slice)
+                flair_max = np.max(flair_slice)
+                if flair_min == flair_max:
+                    flair_normalized = np.zeros_like(flair_slice)
+                else:
+                    flair_normalized = (flair_slice - flair_min) / (flair_max - flair_min)
+                
+                flair_normalized = np.clip(flair_normalized, 0, 1)
+                flair_slice = (flair_normalized * 255).astype(np.uint8)
 
-            if is_informative_slice(t1ce_slice):
-                img = Image.fromarray(t1ce_slice)
-                has_tumor = np.any(seg_slice > 0)
-                save_slice(img, patient_name, view, i, has_tumor, set_name)
-
-    
-    
+                img = Image.fromarray(flair_slice)
+                has_tumour = np.any(seg_slice > 0)
+                save_slice(img, patient, view, i, has_tumour, set_name)
 
 # Main execution
 if __name__ == "__main__":
-    # Create and clear output directories
     create_directory_structure()
     for set_name in sets:
         for category in categories:
             clear_directory(os.path.join(output_path, set_name, category))
 
-    print("Output directories cleared and ready.")
+    print("Existing directories cleared")
 
-    # Get list of all patient folders across all dataset folders
     all_patient_folders = []
     for folder in dataset_folders:
         folder_path = os.path.join(base_dataset_path, folder)
@@ -158,23 +157,26 @@ if __name__ == "__main__":
         else:
             print(f"Warning: Folder {folder} not found in {base_dataset_path}")
 
-    # Split into train, val, and test sets
     train_val, test = train_test_split(all_patient_folders, test_size=0.15, random_state=42)
-    train, val = train_test_split(train_val, test_size=0.1765, random_state=42)  # 0.1765 of 85% is 15% of total
+    train, val = train_test_split(train_val, test_size=0.1765, random_state=42)
 
-    # Save the split information
+    # Shuffle the data within each set
+    train = shuffle_data(train)
+    val = shuffle_data(val)
+    test = shuffle_data(test)
+
     split_info = {
         'train': train,
         'val': val,
         'test': test
     }
+
     with open(os.path.join(output_path, 'data_split.json'), 'w') as f:
         json.dump(split_info, f)
 
-    # Process each set
     for set_name, folders in [('train', train), ('val', val), ('test', test)]:
         for patient_folder in tqdm(folders, desc=f"Processing {set_name} set"):
             patient_path = os.path.join(base_dataset_path, patient_folder)
             process_patient_data(patient_path, set_name)
 
-    print("Processing complete!")
+    print("Preprocessing complete!")
