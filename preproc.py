@@ -8,7 +8,7 @@ from PIL import Image
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 
-base_dataset_path = r"D:\BraTS2021_TrainingSet"
+base_dataset_path = r"C:\BraTS2021_TrainingSet"
 
 dataset_folders = [
     "ACRIN-FMISO-Brain",
@@ -21,7 +21,7 @@ dataset_folders = [
     "UPENN-GBM"
 ]
 
-output_path = r"D:\brats_processed"
+output_path = r"C:\brats_processed_cropped"
 sets = ['train', 'val', 'test']
 categories = ['tumour', 'non_tumour']
 views = ['top', 'side', 'front']
@@ -62,29 +62,19 @@ def save_slice(img, patient, view, slice_num, has_tumour, set_name):
     category = 'tumour' if has_tumour else 'non_tumour'
     save_path = os.path.join(output_path, set_name, category, f'{patient}_{view}_slice_{slice_num:03d}.png')
 
-    if img.size != (240, 240):
-        img = pad_image(img)
+    width, height = img.size
+    left = (width - 200) / 2
+    top = (height - 200) / 2
+    right = (width + 200) / 2
+    bottom = (height + 200) / 2
+
+    img = img.crop((left, top, right, bottom))
 
     if view in ['front', 'side']:
         img = img.rotate(90, expand=True)
 
     img.save(save_path)
 
-def pad_image(img):
-    img_array = np.array(img)
-    height, width = img_array.shape
-    pad_height = max(240 - height, 0)
-    pad_width = max(240 - width, 0)
-    
-    padded_img = np.pad(img_array, 
-                        ((pad_height//2, pad_height - pad_height//2), 
-                        (pad_width//2, pad_width - pad_width//2)),
-                        mode='constant', constant_values=0)
-    
-    if padded_img.shape[0] > 240 or padded_img.shape[1] > 240:
-        padded_img = padded_img[:240, :240]
-                
-    return Image.fromarray(padded_img)
 
 def shuffle_data(data_list):
     random.shuffle(data_list)
