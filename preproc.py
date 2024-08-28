@@ -1,6 +1,5 @@
 import os
 import shutil
-import json
 import numpy as np
 import nibabel as nib
 import random
@@ -21,11 +20,13 @@ dataset_folders = [
     "UPENN-GBM"
 ]
 
-output_path = r"C:\brats_processed_cropped"
+output_path = r"C:\brats_processed_croppedd"
+balanced_output_path = r"C:\brats_processed_balanced"
 sets = ['train', 'val', 'test']
 categories = ['tumour', 'non_tumour']
 views = ['top', 'side', 'front']
-random.seed(42)
+random_seed = 42
+random.seed(random_seed)
 
 def create_directory_structure():
     for set_name in sets:
@@ -45,7 +46,7 @@ def clear_directory(directory):
             except Exception as e:
                 print(f'Failed to delete {file_path}. Reason: {e}')
 
-def is_informative_slice(slice_data, content_threshold=0.25, edge_threshold=0.1):
+def is_informative_slice(slice_data, content_threshold=0.25, edge_threshold=0.16):
     non_black_pixels = np.sum(slice_data > 10)
     total_pixels = slice_data.size
     content_ratio = non_black_pixels / total_pixels
@@ -75,12 +76,6 @@ def save_slice(img, patient, view, slice_num, has_tumour, set_name):
 
     img.save(save_path)
 
-
-def shuffle_data(data_list):
-    random.shuffle(data_list)
-    return data_list
-
-
 def process_patient_data(patient_folder, set_name): #Process data for a single patient by extractn
     seg_file = [f for f in os.listdir(patient_folder) if f.endswith('seg.nii.gz')][0]
     seg_path = os.path.join(patient_folder, seg_file)
@@ -94,7 +89,7 @@ def process_patient_data(patient_folder, set_name): #Process data for a single p
 
     patient = os.path.basename(patient_folder)
 
-    for view_idx, view in enumerate(views):
+    for view in views:
         if view == 'top':
             slices = flair_data.shape[2]
         elif view == 'front':
@@ -129,13 +124,36 @@ def process_patient_data(patient_folder, set_name): #Process data for a single p
                 has_tumour = np.any(seg_slice > 0)
                 save_slice(img, patient, view, i, has_tumour, set_name)
 
+def undersample_majority_class(src_dir, dest_dir, random_state):
+    # Get the number of images in each class
+    tumour_path = os.path.join(src_dir, 'tumour')
+    non_tumour_path = os.path.join(src_dir, 'non_tumour')
+    tumour_images = os.listdir(tumour_path)
+    non_tumour_images = os.listdir(non_tumour_path)
+    n_keep = min(len(tumour_images), len(non_tumour_images))
+    random.seed(random_state)
+    
+    # Randomly select images from the majority class
+    if len(tumour_images) > len(non_tumour_images):
+        tumour_images = random.sample(tumour_images, n_keep)
+    else:
+        non_tumour_images = random.sample(non_tumour_images, n_keep)
+    
+    os.makedirs(os.path.join(dest_dir, 'tumour'), exist_ok=True)
+    os.makedirs(os.path.join(dest_dir, 'non_tumour'), exist_ok=True)
+    
+    # Copy selected images to destination
+    for img in tumour_images:
+        shutil.copy(os.path.join(tumour_path, img), os.path.join(dest_dir, 'tumour', img))
+    for img in non_tumour_images:
+        shutil.copy(os.path.join(non_tumour_path, img), os.path.join(dest_dir, 'non_tumour', img))
+
 # Main execution
 if __name__ == "__main__":
     create_directory_structure()
     for set_name in sets:
         for category in categories:
             clear_directory(os.path.join(output_path, set_name, category))
-
     print("Existing directories cleared")
 
     all_patient_folders = []
@@ -150,23 +168,15 @@ if __name__ == "__main__":
     train_val, test = train_test_split(all_patient_folders, test_size=0.15, random_state=42)
     train, val = train_test_split(train_val, test_size=0.1765, random_state=42)
 
-    # Shuffle the data within each set
-    train = shuffle_data(train)
-    val = shuffle_data(val)
-    test = shuffle_data(test)
-
-    split_info = {
-        'train': train,
-        'val': val,
-        'test': test
-    }
-
-    with open(os.path.join(output_path, 'data_split.json'), 'w') as f:
-        json.dump(split_info, f)
-
     for set_name, folders in [('train', train), ('val', val), ('test', test)]:
         for patient_folder in tqdm(folders, desc=f"Processing {set_name} set"):
             patient_path = os.path.join(base_dataset_path, patient_folder)
             process_patient_data(patient_path, set_name)
-
+   
+    print("Starting undersampling.....")
+    for subset in sets:
+        src_dir = os.path.join(output_path, subset)
+        dest_dir = os.path.join(balanced_output_path, subset)
+        undersample_majority_class(src_dir, dest_dir, random_state=random_seed)
+    
     print("Preprocessing complete!")
