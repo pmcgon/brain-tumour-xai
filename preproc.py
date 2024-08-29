@@ -20,8 +20,8 @@ dataset_folders = [
     "UPENN-GBM"
 ]
 
-output_path = r"C:\brats_processed_croppedd"
-balanced_output_path = r"C:\brats_processed_balanced"
+output_path = r"C:\brats_processed_cropped"
+balanced_output_path = r"C:\balanced_dataset"
 sets = ['train', 'val', 'test']
 categories = ['tumour', 'non_tumour']
 views = ['top', 'side', 'front']
