@@ -20,7 +20,7 @@ GitHub Repository: [brain-tumour-xai](https://github.com/pmcgon/brain-tumour-xai
 3. Cloud Environment Setup (Google Colab)
 
 # Dataset Installation
-1. Download the BraTS dataset from here: https://www.cancerimagingarchive.net/analysis-result/rsna-asnr-miccai-brats-2021/
+1. Download the BraTS 2021 dataset from here: https://www.cancerimagingarchive.net/analysis-result/rsna-asnr-miccai-brats-2021/
 
    Scroll to the Data Access and downlaod the "Challenge Data both tasks" dataset. You will need to install the IBM-ASPERA-Connect which can be downloaded below the downlaod link for the dataset. Please be aware this dataset is extremely large at 142GB.
 2. Extract the BraTS2021_TrainingSet to another folder. Ensure the dataset is organised as so:
