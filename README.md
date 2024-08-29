@@ -3,6 +3,9 @@
 ## Overview
 This project focuses on preprocessing brain MRI images and developing a deep learning model for brain tumor classification. It is split into two main parts: local preprocessing and cloud-based model training/analysis.
 
+## Repository Link
+GitHub Repository: [brain-tumour-xai](https://github.com/pmcgon/brain-tumour-xai)
+
 ## Project Structure
 
 - `preproc.py`: Script for preprocessing the MRI data including extracting 2D Slices from the 3D .nii files, normalising, cropping, undersampling and splitting data.
